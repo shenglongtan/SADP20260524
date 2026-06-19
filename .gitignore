@@ -1,0 +1,43 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local notebooks checkpoints
+.ipynb_checkpoints/
+
+# Large datasets and generated experiment artifacts
+Data/
+Save/Datasets/
+Save/Experiments/
+Save/Postprocess/
+
+# Keep documentation placeholders under Save if needed
+!Save/README.md
+!Save/**/.gitkeep
+
+# Model checkpoints and tensor outputs
+*.pth
+*.pt
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# Generated reports and logs
+*.log
+wandb/
+runs/
+
+# OS/editor files
+desktop.ini
+.DS_Store
+.vscode/
+

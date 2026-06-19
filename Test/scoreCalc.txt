@@ -1,0 +1,145 @@
+from pathlib import Path
+import json
+import os
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+plt.rcParams.update({
+    'font.size': 14,
+    'font.family': ['Times New Roman', 'SimSun']
+})
+
+save_folder = Path(r'E:\PyDeepLearningLab\Code\07_RA-STGNN\Test')
+
+def find_latest_run_folder(root: Path) -> Path:
+    candidates = []
+    for p in root.rglob('Parameters.json'):
+        candidates.append(p.parent)
+    if not candidates:
+        raise FileNotFoundError(f'No Parameters.json found under: {root}')
+    candidates = sorted(candidates, key=lambda x: x.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+if save_folder.is_dir() and not (save_folder / 'Parameters.json').exists():
+    save_folder = find_latest_run_folder(save_folder)
+
+print('save_folder =', save_folder)
+print('Parameters.json exists:', (save_folder / 'Parameters.json').exists())
+print('y_true.npy exists:', (save_folder / 'y_true.npy').exists())
+print('y_pred.npy exists:', (save_folder / 'y_pred.npy').exists())
+print('model.pth exists:', (save_folder / 'model.pth').exists())
+
+params_path = save_folder / 'Parameters.json'
+with params_path.open('r', encoding='utf-8') as f:
+    params = json.load(f)
+
+params_df = pd.DataFrame(sorted(params.items()), columns=['key', 'value'])
+params_df.head(20)
+
+y_true = np.load(save_folder / 'y_true.npy')
+y_pred = np.load(save_folder / 'y_pred.npy')
+
+print('y_true shape:', y_true.shape)
+print('y_pred shape:', y_pred.shape)
+
+if y_true.shape != y_pred.shape:
+    raise ValueError(f'shape mismatch: y_true {y_true.shape}, y_pred {y_pred.shape}')
+
+if y_true.ndim != 3:
+    raise ValueError('Expected saved outputs with shape [sample_num, node_num, horizon_size].')
+
+def compute_anomaly_score(y_true: np.ndarray, y_pred: np.ndarray, horizon_reduce: str = 'max', var_reduce: str = 'max'):
+    """
+    计算窗口级异常分值。
+
+    y_true / y_pred: [N, V, H]
+    horizon_reduce: 对 horizon 维聚合方式，支持 'max' 或 'mean'
+    var_reduce: 对变量维聚合方式，支持 'max' 或 'mean'
+    """
+    if y_true.shape != y_pred.shape:
+        raise ValueError('y_true and y_pred must have the same shape.')
+
+    error = np.abs(y_true - y_pred)
+
+    if horizon_reduce == 'max':
+        var_error = error.max(axis=2)
+    elif horizon_reduce == 'mean':
+        var_error = error.mean(axis=2)
+    else:
+        raise ValueError("horizon_reduce must be 'max' or 'mean'")
+
+    mu = var_error.mean(axis=0, keepdims=True)
+    sigma = var_error.std(axis=0, keepdims=True)
+    sigma = np.where(sigma == 0, 1e-8, sigma)
+    norm_var_error = (var_error - mu) / sigma
+
+    if var_reduce == 'max':
+        score = norm_var_error.max(axis=1)
+    elif var_reduce == 'mean':
+        score = norm_var_error.mean(axis=1)
+    else:
+        raise ValueError("var_reduce must be 'max' or 'mean'")
+
+    return {
+        'error_tensor': error,
+        'var_error': var_error,
+        'norm_var_error': norm_var_error,
+        'score': score,
+        'mu': mu.squeeze(0),
+        'sigma': sigma.squeeze(0),
+    }
+
+result = compute_anomaly_score(y_true, y_pred, horizon_reduce='max', var_reduce='max')
+score = result['score']
+
+print('score shape:', score.shape)
+print('score min/max/mean:', float(score.min()), float(score.max()), float(score.mean()))
+
+def choose_threshold(scores: np.ndarray, method: str = 'percentile', percentile: float = 99.0):
+    if method == 'percentile':
+        return float(np.percentile(scores, percentile))
+    elif method == 'mean_std':
+        return float(scores.mean() + 3 * scores.std())
+    else:
+        raise ValueError("method must be 'percentile' or 'mean_std'")
+
+threshold = choose_threshold(score, method='percentile', percentile=99.0)
+pred_label = (score > threshold).astype(int)
+
+print('threshold =', threshold)
+print('anomaly count =', int(pred_label.sum()))
+print('anomaly ratio =', float(pred_label.mean()))
+
+score_df = pd.DataFrame({
+    'sample_idx': np.arange(len(score)),
+    'anomaly_score': score,
+    'pred_label': pred_label,
+})
+
+score_df.head(20)
+
+fig, ax = plt.subplots(1, 1, figsize=(18, 5), dpi=120)
+ax.plot(score_df['sample_idx'], score_df['anomaly_score'], color='#1f77b4', linewidth=1.5, label='Anomaly Score')
+ax.axhline(threshold, color='#d62728', linestyle='--', linewidth=2, label=f'Threshold = {threshold:.4f}')
+ax.set_xlabel('Window Index')
+ax.set_ylabel('Anomaly Score')
+ax.set_title('Window-level anomaly score')
+ax.legend()
+ax.grid(alpha=0.25)
+plt.tight_layout()
+plt.show()
+
+score_save_path = save_folder / 'anomaly_score.npy'
+label_save_path = save_folder / 'anomaly_label.npy'
+csv_save_path = save_folder / 'anomaly_score.csv'
+
+np.save(score_save_path, score)
+np.save(label_save_path, pred_label)
+score_df.to_csv(csv_save_path, index=False, encoding='utf-8-sig')
+
+print('saved to:')
+print(score_save_path)
+print(label_save_path)
+print(csv_save_path)
