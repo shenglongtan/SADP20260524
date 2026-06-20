@@ -1687,3 +1687,94 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 ```
 
 VSCode 中直接打开文件时，应按 `.vscode/settings.json` 和 `.editorconfig` 以 UTF-8 正常显示。
+
+---
+
+## R018 - 后处理新增 GDN-style 单一预测残差评分路线
+
+### 修订日期
+
+2026-06-20
+
+### 涉及文件
+
+- `Test/anomaly_scoring_threshold_pa.py`
+- `Algorithm_Audit/Revision_Log.md`
+
+### 修订原因
+
+前期实验表明，当前模型的 MTGNN 预测主线整体可学习正常工况，但异常检测效果高度依赖残差归一化、传感器维度聚合和阈值校准方式。为了避免继续引入主观融合评分，本次参考 GDN 类图预测异常检测研究中的单一评分思想，将后处理扩展为“预测残差 -> 稳健归一化 -> 传感器最大聚合 -> 时间平滑 -> 验证集阈值”的独立评分路线。
+
+### 修订内容
+
+1. 新增 `--residual-norm-method zscore|robust_iqr`。
+   - `zscore` 保持原逻辑：`(e - train_mean_i) / (std_used_i + 1e-8)`。
+   - `robust_iqr` 使用训练残差中位数和 IQR：`(e - train_median_i) / (abs(iqr_used_i) + eps)`。
+   - GDN 论文与官方实现使用 median/IQR 稳健归一化；本项目将统计量固定为训练残差统计量，以满足严格测试集隔离要求。
+
+2. 新增 `--threshold-method val_max`。
+   - 只使用验证集连续异常分数的最大值作为阈值。
+   - 测试集标签仍然只用于最终 Precision、Recall、F1 和 AUC-PR 计算，不参与阈值选择。
+
+3. 新增 `--score-preset gdn` 快捷预设。
+   - 默认设置为 `score_source=mtgnn`。
+   - 默认设置为 `residual_norm_method=robust_iqr`。
+   - 默认设置为 `var_reduce=max`。
+   - 默认设置为 `threshold_method=val_max`。
+   - 默认设置为 `score_smooth_window=4`、`score_smooth_method=mean`、`score_smooth_direction=causal`，对应 GDN 官方实现中 `before_num=3` 的“当前点 + 前 3 点”简单移动平均。
+   - 默认设置为 `residual_scale_eps=1e-2`，对应 GDN 官方实现中的 `epsilon=1e-2`。
+   - 默认不启用 `sigma_floor_method=value`，避免把前期工程保护项混入 GDN 原始评分路线；如需做工程扩展实验，可由用户显式指定 `--sigma-floor-method value --sigma-floor-value 0.05`。
+
+4. 输出文件新增通用命名：
+   - `residual_center.npy`
+   - `residual_scale.npy`
+   - `residual_scale_raw.npy`
+
+5. 保留旧输出命名以兼容已有诊断脚本：
+   - `residual_mu.npy`
+   - `residual_sigma.npy`
+   - `residual_sigma_raw.npy`
+
+6. `summary.json` 新增：
+   - `score_preset`
+   - `residual_norm_method`
+   - `scale_floor_info`
+   - 更明确的 `standardization` 描述。
+
+### 使用建议
+
+Kaggle 中优先用已训练好的 run 直接重跑后处理：
+
+```bash
+python Test/anomaly_scoring_threshold_pa.py \
+  --run-dir "$RUN_DIR" \
+  --data-path "$DATA_PATH" \
+  --score-preset gdn \
+  --eval-granularity point \
+  --time-aggregate mean \
+  --save-subdir postprocess_gdn_robust_iqr_max_valmax_smooth4
+```
+
+如果需要复现实验对照，可显式覆盖预设参数，例如把平滑窗口改为 5：
+
+```bash
+python Test/anomaly_scoring_threshold_pa.py \
+  --run-dir "$RUN_DIR" \
+  --data-path "$DATA_PATH" \
+  --score-preset gdn \
+  --score-smooth-window 3 \
+  --sigma-floor-method value \
+  --sigma-floor-value 0.05 \
+  --save-subdir postprocess_gdn_plus_floor_smooth3
+```
+
+或把平滑窗口改为 5：
+
+```bash
+python Test/anomaly_scoring_threshold_pa.py \
+  --run-dir "$RUN_DIR" \
+  --data-path "$DATA_PATH" \
+  --score-preset gdn \
+  --score-smooth-window 5 \
+  --save-subdir postprocess_gdn_robust_iqr_max_valmax_smooth5
+```

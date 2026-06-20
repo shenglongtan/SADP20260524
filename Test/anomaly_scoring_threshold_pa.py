@@ -12,6 +12,7 @@ SADP 后处理与评估脚本。
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -62,8 +63,37 @@ def str_to_bool(v: str) -> bool:
     raise ValueError(f"{v} is not a valid boolean value.")
 
 
+def collect_provided_flags(argv: List[str]) -> set:
+    flags = set()
+    for item in argv:
+        if item.startswith("--"):
+            flags.add(item.split("=", 1)[0])
+    return flags
+
+
+def set_if_missing(args: argparse.Namespace, provided_flags: set, flag: str, attr: str, value) -> None:
+    if flag not in provided_flags:
+        setattr(args, attr, value)
+
+
+def apply_score_preset(args: argparse.Namespace, provided_flags: set) -> None:
+    if args.score_preset != "gdn":
+        return
+
+    set_if_missing(args, provided_flags, "--score-source", "score_source", "mtgnn")
+    set_if_missing(args, provided_flags, "--residual-norm-method", "residual_norm_method", "robust_iqr")
+    set_if_missing(args, provided_flags, "--var-reduce", "var_reduce", "max")
+    set_if_missing(args, provided_flags, "--threshold-method", "threshold_method", "val_max")
+    set_if_missing(args, provided_flags, "--score-smooth-window", "score_smooth_window", 4)
+    set_if_missing(args, provided_flags, "--score-smooth-method", "score_smooth_method", "mean")
+    set_if_missing(args, provided_flags, "--score-smooth-direction", "score_smooth_direction", "causal")
+    set_if_missing(args, provided_flags, "--residual-scale-eps", "residual_scale_eps", 1e-2)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SADP anomaly scoring and evaluation.")
+    parser.add_argument("--score-preset", type=str, default="none", choices=["none", "gdn"],
+                        help="评分预设。gdn 表示 MTGNN 预测残差 + robust_iqr + max + 因果平滑 + 验证集最大值阈值。")
     parser.add_argument("--run-dir", type=str, required=True, help="实验 run 目录，通常为 Save/Experiments/.../run_00")
     parser.add_argument("--data-path", type=str, default=None, help="可选：包含 train/val/test.npz 的数据集目录")
     parser.add_argument("--save-subdir", type=str, default="postprocess", help="输出子目录")
@@ -76,6 +106,11 @@ def parse_args() -> argparse.Namespace:
                         help="标准化统计量来源。默认从训练残差计算；也可从外部 stats_file 读取")
     parser.add_argument("--stats-file", type=str, default=None,
                         help="外部统计量 npz 文件，需包含 mu/sigma 或 center/scale")
+    parser.add_argument("--residual-norm-method", type=str, default="zscore",
+                        choices=["zscore", "robust_iqr"],
+                        help="残差归一化方法：zscore 使用训练残差 mean/std；robust_iqr 使用训练残差 median/IQR。")
+    parser.add_argument("--residual-scale-eps", type=float, default=EPS,
+                        help="残差尺度分母 epsilon。GDN 官方实现使用 1e-2；默认保持历史 zscore 的 1e-8。")
 
     parser.add_argument("--sigma-floor-method", type=str, default="none",
                         choices=["none", "quantile", "value"],
@@ -101,14 +136,16 @@ def parse_args() -> argparse.Namespace:
                         help="causal uses current/past scores only; centered is offline and uses both sides.")
 
     parser.add_argument("--threshold-method", type=str, default="percentile",
-                        choices=["f1_val", "percentile", "mean_std"],
+                        choices=["f1_val", "percentile", "mean_std", "val_max"],
                         help="路线 A 默认使用正常验证集分位数阈值；f1_val 仅作为监督阈值校准模式")
     parser.add_argument("--threshold-percentile", type=float, default=99.0)
     parser.add_argument("--threshold-k", type=float, default=3.0)
     parser.add_argument("--pa-delay", type=int, default=None,
                         help="PA 延迟半径。为空时使用 horizon_size-1")
     parser.add_argument("--save-pa", type=str_to_bool, default=True, help="是否额外输出 PA 后指标")
-    return parser.parse_args()
+    args = parser.parse_args()
+    apply_score_preset(args, collect_provided_flags(sys.argv[1:]))
+    return args
 
 
 def get_prediction_dir(run_dir: Path) -> Path:
@@ -314,13 +351,23 @@ def reduce_error_by_horizon(error_tensor: np.ndarray, horizon_reduce: str) -> np
     raise ValueError(f"未知 horizon_reduce: {horizon_reduce}")
 
 
-def compute_train_stats(train_error_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def compute_train_stats(train_error_matrix: np.ndarray, norm_method: str) -> Tuple[np.ndarray, np.ndarray]:
     if train_error_matrix.ndim != 2:
         raise ValueError(f"训练残差统计矩阵必须为 [time, nodes]，收到 {train_error_matrix.shape}")
-    mu = train_error_matrix.mean(axis=0, keepdims=True).astype(np.float32)
-    sigma = train_error_matrix.std(axis=0, keepdims=True).astype(np.float32)
-    sigma = np.where(sigma <= 0, EPS, sigma).astype(np.float32)
-    return mu, sigma
+
+    if norm_method == "zscore":
+        center = train_error_matrix.mean(axis=0, keepdims=True).astype(np.float32)
+        scale = train_error_matrix.std(axis=0, keepdims=True).astype(np.float32)
+    elif norm_method == "robust_iqr":
+        center = np.median(train_error_matrix, axis=0, keepdims=True).astype(np.float32)
+        q75 = np.percentile(train_error_matrix, 75, axis=0, keepdims=True)
+        q25 = np.percentile(train_error_matrix, 25, axis=0, keepdims=True)
+        scale = (q75 - q25).astype(np.float32)
+    else:
+        raise ValueError(f"未知 residual-norm-method: {norm_method}")
+
+    scale = np.where(scale <= 0, EPS, scale).astype(np.float32)
+    return center, scale
 
 
 def load_stats_file(path: str, node_num: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -386,22 +433,31 @@ def apply_sigma_floor(
     }
     info.update(sigma_summary("raw_sigma", raw_sigma))
     info.update(sigma_summary("used_sigma", used_sigma))
+    info.update(sigma_summary("raw_scale", raw_sigma))
+    info.update(sigma_summary("used_scale", used_sigma))
     return used_sigma, info
 
 
 def compute_scores_from_matrix(
         error_matrix: np.ndarray,
-        mu: np.ndarray,
-        sigma: np.ndarray,
+        center: np.ndarray,
+        scale: np.ndarray,
+        scale_eps: float,
         var_reduce: str,
         var_topk: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     if error_matrix.ndim != 2:
         raise ValueError(f"error_matrix 必须为 [time, nodes]，收到 {error_matrix.shape}")
-    if mu.shape != (1, error_matrix.shape[1]) or sigma.shape != (1, error_matrix.shape[1]):
-        raise ValueError(f"mu/sigma 广播形状错误: error={error_matrix.shape}, mu={mu.shape}, sigma={sigma.shape}")
+    if center.shape != (1, error_matrix.shape[1]) or scale.shape != (1, error_matrix.shape[1]):
+        raise ValueError(
+            f"center/scale 广播形状错误: error={error_matrix.shape}, "
+            f"center={center.shape}, scale={scale.shape}"
+        )
 
-    norm_error = (error_matrix - mu) / (sigma + EPS)
+    if scale_eps < 0:
+        raise ValueError(f"residual-scale-eps must be non-negative, got {scale_eps}")
+
+    norm_error = (error_matrix - center) / (np.abs(scale) + float(scale_eps))
     if var_reduce == "mean":
         scores = norm_error.mean(axis=1)
     elif var_reduce == "max":
@@ -497,6 +553,9 @@ def choose_threshold(
     if method == "percentile":
         tau = float(np.percentile(scores_val, percentile))
         return tau, {"method": "percentile", "percentile": float(percentile), "threshold": tau}
+    if method == "val_max":
+        tau = float(np.max(scores_val))
+        return tau, {"method": "val_max", "threshold": tau}
     if method == "mean_std":
         tau = float(scores_val.mean() + k * scores_val.std())
         return tau, {"method": "mean_std", "k": float(k), "threshold": tau}
@@ -594,9 +653,9 @@ def save_outputs(
         raw_scores_test: Optional[np.ndarray],
         norm_val: np.ndarray,
         norm_test: np.ndarray,
-        mu: np.ndarray,
-        sigma: np.ndarray,
-        sigma_raw: np.ndarray,
+        center: np.ndarray,
+        scale: np.ndarray,
+        scale_raw: np.ndarray,
         pred_test_raw: np.ndarray,
         pred_test_pa: np.ndarray,
         labels: Dict[str, np.ndarray],
@@ -611,9 +670,12 @@ def save_outputs(
         np.save(out_dir / "score_test_raw_score.npy", raw_scores_test)
     np.save(out_dir / "norm_err_val.npy", norm_val)
     np.save(out_dir / "norm_err_test.npy", norm_test)
-    np.save(out_dir / "residual_mu.npy", mu.squeeze(0))
-    np.save(out_dir / "residual_sigma.npy", sigma.squeeze(0))
-    np.save(out_dir / "residual_sigma_raw.npy", sigma_raw.squeeze(0))
+    np.save(out_dir / "residual_center.npy", center.squeeze(0))
+    np.save(out_dir / "residual_scale.npy", scale.squeeze(0))
+    np.save(out_dir / "residual_scale_raw.npy", scale_raw.squeeze(0))
+    np.save(out_dir / "residual_mu.npy", center.squeeze(0))
+    np.save(out_dir / "residual_sigma.npy", scale.squeeze(0))
+    np.save(out_dir / "residual_sigma_raw.npy", scale_raw.squeeze(0))
     np.save(out_dir / "pred_test_raw.npy", pred_test_raw)
     np.save(out_dir / "pred_test_pa.npy", pred_test_pa)
 
@@ -658,20 +720,24 @@ def main() -> None:
     if args.stats_source == "train":
         if "train" not in matrices:
             raise FileNotFoundError("stats-source=train 需要训练残差。请重新运行训练脚本导出 train_*_error.npy。")
-        mu, sigma = compute_train_stats(matrices["train"])
+        center, scale = compute_train_stats(matrices["train"], args.residual_norm_method)
     else:
-        mu, sigma = load_stats_file(args.stats_file, node_num)
+        center, scale = load_stats_file(args.stats_file, node_num)
 
-    sigma_raw = sigma.copy()
-    sigma, sigma_floor_info = apply_sigma_floor(
-        sigma,
+    scale_raw = scale.copy()
+    scale, sigma_floor_info = apply_sigma_floor(
+        scale,
         args.sigma_floor_method,
         args.sigma_floor_quantile,
         args.sigma_floor_value,
     )
 
-    raw_scores_val, norm_val = compute_scores_from_matrix(matrices["val"], mu, sigma, args.var_reduce, args.var_topk)
-    raw_scores_test, norm_test = compute_scores_from_matrix(matrices["test"], mu, sigma, args.var_reduce, args.var_topk)
+    raw_scores_val, norm_val = compute_scores_from_matrix(
+        matrices["val"], center, scale, args.residual_scale_eps, args.var_reduce, args.var_topk
+    )
+    raw_scores_test, norm_test = compute_scores_from_matrix(
+        matrices["test"], center, scale, args.residual_scale_eps, args.var_reduce, args.var_topk
+    )
     scores_val, score_smoothing_info = smooth_scores(
         raw_scores_val,
         args.score_smooth_window,
@@ -697,15 +763,27 @@ def main() -> None:
     pred_test_raw = (scores_test >= tau).astype(np.int8)
     pa_delay = int(args.pa_delay) if args.pa_delay is not None else int(max(0, horizon_size - 1))
     pred_test_pa = point_adjust_binary(pred_test_raw, pa_delay) if args.save_pa else pred_test_raw.copy()
+    if args.residual_norm_method == "robust_iqr":
+        standardization_desc = (
+            f"robust_iqr: (e - train_median_i) / (abs(iqr_used_i) + {args.residual_scale_eps:g})"
+        )
+    else:
+        standardization_desc = (
+            f"zscore: (e - train_mean_i) / (abs(std_used_i) + {args.residual_scale_eps:g})"
+        )
 
     summary = {
         "run_dir": str(run_dir),
+        "score_preset": args.score_preset,
         "eval_granularity": args.eval_granularity,
         "score_source_arg": args.score_source,
         "selected_residual_source": selected_source,
         "stats_source": args.stats_source,
         "stats_file": args.stats_file,
-        "standardization": "zscore: (e - train_mu_i) / (sigma_used_i + 1e-8)",
+        "residual_norm_method": args.residual_norm_method,
+        "residual_scale_eps": float(args.residual_scale_eps),
+        "standardization": standardization_desc,
+        "scale_floor_info": sigma_floor_info,
         "sigma_floor_info": sigma_floor_info,
         "var_reduce": args.var_reduce,
         "var_topk": int(args.var_topk),
@@ -746,9 +824,9 @@ def main() -> None:
         raw_scores_test,
         norm_val,
         norm_test,
-        mu,
-        sigma,
-        sigma_raw,
+        center,
+        scale,
+        scale_raw,
         pred_test_raw,
         pred_test_pa,
         labels,

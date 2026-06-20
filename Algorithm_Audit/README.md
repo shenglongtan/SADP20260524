@@ -29,6 +29,8 @@
 - `07_point_level_evaluation_protocol.md`：滑动窗口预测结果反投影回原始点级评价的协议说明。
 - `08_postprocess_strict_protocol_audit.md`：后处理严格数学协议、数据隔离和点级评价修订说明。
 - `09_route_a_semisupervised_threshold_protocol.md`：路线 A 半监督数据划分与无监督阈值协议。
+- `10_performance_root_cause_audit.md`：异常检测性能偏低的根因排查记录。
+- `11_gdn_style_prediction_scoring_protocol.md`：基于 GDN 的 MTGNN 预测分支单一残差评分协议。
 - `Revision_Log.md`：代码修订记录总表，后续每次实质修改都在这里登记。
 
 ## 结果保存结构
