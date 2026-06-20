@@ -47,6 +47,16 @@ RESIDUAL_FILES = {
         "val": "val_mtgnn_pred_error.npy",
         "test": "test_mtgnn_pred_error.npy",
     },
+    "ae_real": {
+        "train": "train_ae_rec_real_error.npy",
+        "val": "val_ae_rec_real_error.npy",
+        "test": "test_ae_rec_real_error.npy",
+    },
+    "ae_pred": {
+        "train": "train_ae_rec_pred_error.npy",
+        "val": "val_ae_rec_pred_error.npy",
+        "test": "test_ae_rec_pred_error.npy",
+    },
 }
 
 EXTRA_KEYS = ("y_time", "y_attack_window", "y_attack_point")
@@ -100,8 +110,11 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--eval-granularity", type=str, default="point", choices=["point", "window"],
                         help="point 表示反投影回原始时间点评价；window 表示沿用窗口级评价")
-    parser.add_argument("--score-source", type=str, default="auto", choices=["auto", "joint", "mtgnn"],
-                        help="auto 优先使用 joint residual，其次 MTGNN residual，最后回退 y_true/y_pred 绝对误差")
+    parser.add_argument("--score-source", type=str, default="auto",
+                        choices=["auto", "joint", "mtgnn", "ae_real", "ae_pred", "ae_sum"],
+                        help="异常评分残差来源：auto/joint/mtgnn/ae_real/ae_pred/ae_sum")
+    parser.add_argument("--ae-sum-lambda", type=float, default=0.5,
+                        help="score-source=ae_sum 时 ae_rec_pred_error 的权重，默认与训练参数 ae_lambda=0.5 对齐")
     parser.add_argument("--stats-source", type=str, default="train", choices=["train", "stats_file"],
                         help="标准化统计量来源。默认从训练残差计算；也可从外部 stats_file 读取")
     parser.add_argument("--stats-file", type=str, default=None,
@@ -200,18 +213,26 @@ def select_error_tensors(
         pred_data: Dict[str, np.ndarray],
         score_source: str,
         required_splits: List[str],
+        ae_sum_lambda: float,
 ) -> Tuple[Dict[str, np.ndarray], str]:
     def has_residual(source: str) -> bool:
         return all(RESIDUAL_FILES[source][split] in pred_data for split in required_splits)
+
+    def require_residual(source: str) -> Dict[str, np.ndarray]:
+        if not has_residual(source):
+            missing = [RESIDUAL_FILES[source][split] for split in required_splits
+                       if RESIDUAL_FILES[source][split] not in pred_data]
+            raise FileNotFoundError(f"score-source={source} 缺少文件: {missing}")
+        out = {split: pred_data[RESIDUAL_FILES[source][split]] for split in required_splits}
+        validate_split_shapes(out, pred_data)
+        return out
 
     if score_source in {"auto", "joint"} and has_residual("joint"):
         out = {split: pred_data[RESIDUAL_FILES["joint"][split]] for split in required_splits}
         validate_split_shapes(out, pred_data)
         return out, "joint_error"
     if score_source == "joint":
-        missing = [RESIDUAL_FILES["joint"][split] for split in required_splits
-                   if RESIDUAL_FILES["joint"][split] not in pred_data]
-        raise FileNotFoundError(f"score-source=joint 缺少文件: {missing}")
+        return require_residual("joint"), "joint_error"
 
     if score_source in {"auto", "mtgnn"} and has_residual("mtgnn"):
         out = {split: pred_data[RESIDUAL_FILES["mtgnn"][split]] for split in required_splits}
@@ -219,9 +240,23 @@ def select_error_tensors(
         return out, "mtgnn_pred_error"
 
     if score_source == "mtgnn":
-        missing = [RESIDUAL_FILES["mtgnn"][split] for split in required_splits
-                   if RESIDUAL_FILES["mtgnn"][split] not in pred_data]
-        raise FileNotFoundError(f"score-source=mtgnn 缺少文件: {missing}")
+        return require_residual("mtgnn"), "mtgnn_pred_error"
+
+    if score_source == "ae_real":
+        return require_residual("ae_real"), "ae_rec_real_error"
+
+    if score_source == "ae_pred":
+        return require_residual("ae_pred"), "ae_rec_pred_error"
+
+    if score_source == "ae_sum":
+        real = require_residual("ae_real")
+        pred = require_residual("ae_pred")
+        out = {
+            split: (real[split] + float(ae_sum_lambda) * pred[split]).astype(np.float32)
+            for split in required_splits
+        }
+        validate_split_shapes(out, pred_data)
+        return out, f"ae_sum_error(real_plus_{float(ae_sum_lambda):g}_pred)"
 
     out = {}
     for split in required_splits:
@@ -695,7 +730,12 @@ def main() -> None:
     pred_data = load_predictions(run_dir)
     need_train_stats = args.stats_source == "train"
     required_splits = ["val", "test"] + (["train"] if need_train_stats else [])
-    error_tensors, selected_source = select_error_tensors(pred_data, args.score_source, required_splits)
+    error_tensors, selected_source = select_error_tensors(
+        pred_data,
+        args.score_source,
+        required_splits,
+        args.ae_sum_lambda,
+    )
     extras = load_split_extras(run_dir, args.data_path, required_splits)
 
     if args.eval_granularity == "point":
@@ -778,6 +818,7 @@ def main() -> None:
         "eval_granularity": args.eval_granularity,
         "score_source_arg": args.score_source,
         "selected_residual_source": selected_source,
+        "ae_sum_lambda": float(args.ae_sum_lambda),
         "stats_source": args.stats_source,
         "stats_file": args.stats_file,
         "residual_norm_method": args.residual_norm_method,

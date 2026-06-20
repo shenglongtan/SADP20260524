@@ -95,9 +95,12 @@ joint_error = mtgnn_pred_error
 `Test/anomaly_scoring_threshold_pa.py` 新增 `--score-source`：
 
 ```text
-auto   : 默认值，优先使用 joint_error；若旧实验没有该文件，则回退到 MTGNN 预测误差。
-joint  : 强制使用 joint_error，缺失文件时报错。
-mtgnn  : 使用 MTGNN 预测误差，用于消融对照。
+auto    : 默认值，优先使用 joint_error；若旧实验没有该文件，则回退到 MTGNN 预测误差。
+joint   : 强制使用 joint_error，缺失文件时报错。
+mtgnn   : 使用 MTGNN 预测误差，用于消融对照。
+ae_real : 使用 AE 对真实窗口未来段的重构残差。
+ae_pred : 使用 AE 对 MTGNN 生成窗口未来段的重构残差。
+ae_sum  : 使用 ae_rec_real_error + ae_sum_lambda * ae_rec_pred_error。
 ```
 
 后处理仍只在验证集残差上估计归一化统计量与阈值，测试集只用于最终评分，避免测试集信息泄漏。
@@ -108,6 +111,6 @@ mtgnn  : 使用 MTGNN 预测误差，用于消融对照。
 
 - MTGNN-only：`--use_ae false` 或后处理 `--score-source mtgnn`。
 - Joint：默认配置，训练和评分均使用 AE。
-- AE residual ablation：后续如果需要，可在后处理阶段单独选择 AE 残差项作为评分来源。
+- AE residual ablation：后处理阶段使用 `--score-source ae_real`、`--score-source ae_pred` 或 `--score-source ae_sum` 单独考察 AE 重构残差的异常区分能力。
 
-当前代码已经支持前两类实验；第三类需要进一步扩展后处理 `score-source` 选项。
+当前代码已经支持上述三类实验。需要注意，AE-only 后处理只是分析 AE 残差是否能补足预测分支漏检事件；它不代表主算法训练阶段关闭 MTGNN。

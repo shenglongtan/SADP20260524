@@ -1778,3 +1778,74 @@ python Test/anomaly_scoring_threshold_pa.py \
   --score-smooth-window 5 \
   --save-subdir postprocess_gdn_robust_iqr_max_valmax_smooth5
 ```
+
+---
+
+## R019 - 后处理支持 AE 重构残差单分支评分诊断
+
+### 修订日期
+
+2026-06-20
+
+### 涉及文件
+
+- `Test/anomaly_scoring_threshold_pa.py`
+- `Algorithm_Audit/04_ae_mtg_nn_joint_residual_protocol.md`
+- `Algorithm_Audit/Revision_Log.md`
+
+### 修订原因
+
+当前 MTGNN 预测分支在 `zscore + sigma_floor + topk_mean + p99.9 + smooth3` 配置下达到较好的点级结果，但仍有 13 个攻击事件未命中。漏检分析显示其中部分事件的预测残差响应很弱，单纯降低阈值会显著增加误报。因此需要进一步检查 AE 重构残差是否能补充预测分支不敏感的攻击事件。
+
+### 修订内容
+
+1. `--score-source` 新增：
+
+```text
+ae_real
+ae_pred
+ae_sum
+```
+
+2. 残差文件映射新增：
+
+```text
+train/val/test_ae_rec_real_error.npy
+train/val/test_ae_rec_pred_error.npy
+```
+
+3. `ae_sum` 定义为：
+
+```text
+ae_sum_error = ae_rec_real_error + ae_sum_lambda * ae_rec_pred_error
+```
+
+其中 `--ae-sum-lambda` 默认值为 `0.5`，与当前训练配置中的 `ae_lambda=0.5` 对齐。
+
+4. `summary.json` 新增 `ae_sum_lambda` 字段，确保 AE 组合残差实验可复现。
+
+### 使用建议
+
+优先在已有 run 上运行 AE 单分支诊断，不需要重新训练：
+
+```bash
+python Test/anomaly_scoring_threshold_pa.py \
+  --run-dir "$RUN_DIR" \
+  --data-path "$DATA_PATH" \
+  --score-source ae_real \
+  --residual-norm-method zscore \
+  --sigma-floor-method value \
+  --sigma-floor-value 0.05 \
+  --var-reduce topk_mean \
+  --var-topk 5 \
+  --threshold-method percentile \
+  --threshold-percentile 99.9 \
+  --score-smooth-window 3 \
+  --score-smooth-method mean \
+  --score-smooth-direction causal \
+  --eval-granularity point \
+  --time-aggregate mean \
+  --save-subdir postprocess_ae_real_zscore_floor005_topk5_p999_smooth3
+```
+
+若 AE 单分支能命中预测分支漏检事件，则下一步再设计 `mtgnn + ae` 综合评分；若不能命中，则说明当前 AE 重构模块对这些事件也不敏感，需要回到模型结构或数据标签响应层面继续排查。
