@@ -1597,3 +1597,93 @@ PR-AUC    = 0.5804
 2. 暂不将 `joint_error` 作为主结果，后续单独重新设计 AE 残差融合。
 3. 检查 node `5` 与 node `10` 的真实传感器名称、训练段方差、测试段轨迹和攻击对应关系。
 4. 后续若更换数据集、采样率或滑窗参数，需重新验证 `sigma_floor_value=0.05` 是否仍合理。
+
+---
+
+## R016 - 后处理新增异常分数时间平滑实验参数
+### 修订日期
+
+2026-06-20
+
+### 涉及文件
+
+- `Test/anomaly_scoring_threshold_pa.py`
+- `Algorithm_Audit/Revision_Log.md`
+
+### 修订原因
+
+Kaggle 事件级诊断显示，`var_reduce=max` 可将事件召回率从 `0.6857` 提升到 `0.8286`，说明许多攻击事件具有局部单通道强残差信号；但 `max` 同时导致测试集预测异常比例过高，说明正常验证集和测试集中存在孤立尖峰噪声。为区分“持续性局部异常”和“单点噪声尖峰”，需要在最终一维异常分数上加入时间平滑实验。
+
+### 修订内容
+
+1. 在 `Test/anomaly_scoring_threshold_pa.py` 新增参数：
+
+```bash
+--score-smooth-window
+--score-smooth-method mean|median
+--score-smooth-direction causal|centered
+```
+
+2. 默认 `score-smooth-window=1`，即不启用平滑，保持历史实验完全可复现。
+3. 平滑位置为传感器维度聚合之后、阈值选择之前；验证集阈值和测试集判定均使用同一平滑规则。
+4. 默认 `score-smooth-direction=causal`，只使用当前点和过去点，避免使用未来测试信息。
+5. 输出文件中 `score_val.npy` 与 `score_test.npy` 保存最终用于阈值和指标计算的平滑分数；额外保存 `score_val_raw.npy` 与 `score_test_raw_score.npy` 作为未平滑分数备查。
+6. `summary.json` 新增 `score_smoothing_info`，记录平滑窗口、方法、方向和是否启用。
+
+### 实验建议
+
+优先测试：
+
+```bash
+--var-reduce max --score-smooth-window 3 --score-smooth-method mean --score-smooth-direction causal
+--var-reduce max --score-smooth-window 5 --score-smooth-method mean --score-smooth-direction causal
+--var-reduce topk_mean --var-topk 5 --score-smooth-window 3 --score-smooth-method mean --score-smooth-direction causal
+```
+
+如果 `max + causal smoothing` 能在保持较高事件召回的同时显著降低异常比例和误报，则说明当前瓶颈主要来自单点噪声尖峰，而不是模型残差完全失效。
+
+---
+
+## R017 - 项目级 UTF-8 编码规则加固与历史乱码复核
+### 修订日期
+
+2026-06-20
+
+### 涉及文件
+
+- `.editorconfig`
+- `.gitattributes`
+- `.vscode/settings.json`
+- `Algorithm_Audit/Revision_Log.md`
+
+### 修订原因
+
+Windows PowerShell 5.1 和部分编辑器在读取无 BOM UTF-8 中文文件时，可能按系统 ANSI/GBK 进行解码，从而把正常中文显示为 `鍚`、`璁`、`銆`、`涓€` 等乱码。该问题会造成审阅注释、日志和修订文档时的误判。
+
+### 复核结果
+
+已扫描项目内 `*.py` 与 `*.md` 文件，未检出典型历史乱码片段。当前源码和文档内容本身为 UTF-8 正常中文；此前在终端中看到的乱码主要来自 PowerShell 显示/解码方式，而不是文件内容已经损坏。
+
+### 修订内容
+
+1. 新增 `.editorconfig`，固定项目文本文件使用 UTF-8、LF 换行、文件末尾保留换行。
+2. 新增 `.gitattributes`，固定 Python、Markdown、JSON、TXT、PowerShell、Notebook 文件作为文本并使用 LF 换行，减少 Windows 与 Kaggle/Linux 之间的换行漂移。
+3. 修改 `.vscode/settings.json`，将 `files.autoGuessEncoding` 设为 `false`，避免 VSCode 自动把 UTF-8 中文误判为 GBK。
+4. 保留 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`，确保 Python 运行与输出默认采用 UTF-8。
+
+### 使用说明
+
+如果在 Windows PowerShell 中查看中文源码，建议显式使用：
+
+```powershell
+Get-Content -Encoding UTF8 path\to\file.py
+```
+
+或者在终端会话开始时设置：
+
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+```
+
+VSCode 中直接打开文件时，应按 `.vscode/settings.json` 和 `.editorconfig` 以 UTF-8 正常显示。

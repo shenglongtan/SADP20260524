@@ -93,6 +93,13 @@ def parse_args() -> argparse.Namespace:
                         help="传感器维度聚合方式。算法规范默认 mean")
     parser.add_argument("--var-topk", type=int, default=10, help="var-reduce=topk_mean 时使用")
 
+    parser.add_argument("--score-smooth-window", type=int, default=1,
+                        help="Temporal smoothing window for final 1D scores. 1 disables smoothing.")
+    parser.add_argument("--score-smooth-method", type=str, default="mean", choices=["mean", "median"],
+                        help="Temporal smoothing method for final 1D scores.")
+    parser.add_argument("--score-smooth-direction", type=str, default="causal", choices=["causal", "centered"],
+                        help="causal uses current/past scores only; centered is offline and uses both sides.")
+
     parser.add_argument("--threshold-method", type=str, default="percentile",
                         choices=["f1_val", "percentile", "mean_std"],
                         help="路线 A 默认使用正常验证集分位数阈值；f1_val 仅作为监督阈值校准模式")
@@ -410,6 +417,46 @@ def compute_scores_from_matrix(
     return scores.astype(np.float32), norm_error.astype(np.float32)
 
 
+def smooth_scores(
+        scores: np.ndarray,
+        window: int,
+        method: str,
+        direction: str,
+) -> Tuple[np.ndarray, Dict[str, object]]:
+    scores = np.asarray(scores, dtype=np.float32).reshape(-1)
+    window = int(window)
+    info: Dict[str, object] = {
+        "window": int(window),
+        "method": method,
+        "direction": direction,
+        "enabled": bool(window > 1),
+    }
+    if window <= 1:
+        return scores.copy(), info
+    if method not in {"mean", "median"}:
+        raise ValueError(f"Unknown score-smooth-method: {method}")
+    if direction not in {"causal", "centered"}:
+        raise ValueError(f"Unknown score-smooth-direction: {direction}")
+
+    out = np.empty_like(scores, dtype=np.float32)
+    n = scores.shape[0]
+    for i in range(n):
+        if direction == "causal":
+            left = max(0, i - window + 1)
+            right = i + 1
+        else:
+            before = window // 2
+            after = window - before
+            left = max(0, i - before)
+            right = min(n, i + after)
+        segment = scores[left:right]
+        if method == "mean":
+            out[i] = np.mean(segment, dtype=np.float64)
+        else:
+            out[i] = np.median(segment)
+    return out.astype(np.float32), info
+
+
 def best_threshold_by_val_f1(scores_val: np.ndarray, labels_val: np.ndarray) -> Tuple[float, Dict[str, float]]:
     labels_val = labels_val.astype(np.int8).reshape(-1)
     scores_val = scores_val.astype(np.float32).reshape(-1)
@@ -543,6 +590,8 @@ def save_outputs(
         out_dir: Path,
         scores_val: np.ndarray,
         scores_test: np.ndarray,
+        raw_scores_val: Optional[np.ndarray],
+        raw_scores_test: Optional[np.ndarray],
         norm_val: np.ndarray,
         norm_test: np.ndarray,
         mu: np.ndarray,
@@ -556,6 +605,10 @@ def save_outputs(
     out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / "score_val.npy", scores_val)
     np.save(out_dir / "score_test.npy", scores_test)
+    if raw_scores_val is not None:
+        np.save(out_dir / "score_val_raw.npy", raw_scores_val)
+    if raw_scores_test is not None:
+        np.save(out_dir / "score_test_raw_score.npy", raw_scores_test)
     np.save(out_dir / "norm_err_val.npy", norm_val)
     np.save(out_dir / "norm_err_test.npy", norm_test)
     np.save(out_dir / "residual_mu.npy", mu.squeeze(0))
@@ -617,8 +670,20 @@ def main() -> None:
         args.sigma_floor_value,
     )
 
-    scores_val, norm_val = compute_scores_from_matrix(matrices["val"], mu, sigma, args.var_reduce, args.var_topk)
-    scores_test, norm_test = compute_scores_from_matrix(matrices["test"], mu, sigma, args.var_reduce, args.var_topk)
+    raw_scores_val, norm_val = compute_scores_from_matrix(matrices["val"], mu, sigma, args.var_reduce, args.var_topk)
+    raw_scores_test, norm_test = compute_scores_from_matrix(matrices["test"], mu, sigma, args.var_reduce, args.var_topk)
+    scores_val, score_smoothing_info = smooth_scores(
+        raw_scores_val,
+        args.score_smooth_window,
+        args.score_smooth_method,
+        args.score_smooth_direction,
+    )
+    scores_test, _ = smooth_scores(
+        raw_scores_test,
+        args.score_smooth_window,
+        args.score_smooth_method,
+        args.score_smooth_direction,
+    )
 
     val_labels = labels.get("val")
     tau, threshold_info = choose_threshold(
@@ -644,6 +709,7 @@ def main() -> None:
         "sigma_floor_info": sigma_floor_info,
         "var_reduce": args.var_reduce,
         "var_topk": int(args.var_topk),
+        "score_smoothing_info": score_smoothing_info,
         "time_aggregate": args.time_aggregate if args.eval_granularity == "point" else None,
         "horizon_reduce": args.horizon_reduce if args.eval_granularity == "window" else None,
         "threshold_info": threshold_info,
@@ -676,6 +742,8 @@ def main() -> None:
         out_dir,
         scores_val,
         scores_test,
+        raw_scores_val,
+        raw_scores_test,
         norm_val,
         norm_test,
         mu,
