@@ -236,3 +236,57 @@ The most likely root cause is not a single runtime bug. It is a combination of:
 6. possible dense-graph smoothing.
 
 The first next step should be diagnostic experiments on saved residuals, not immediate model rewriting.
+
+## 2026-06-20 Follow-Up: Sigma Floor Diagnosis
+
+After disabling curriculum learning and re-running Kaggle training, `cl=False` was confirmed in the log. The validation prediction loss decreased substantially compared with the previous CL run, which indicates that the full-horizon training mismatch was fixed.
+
+However, the initial anomaly detection metrics remained weak. Postprocess diagnostics showed that the main remaining issue was not the model forward pass, but residual standardization:
+
+- Raw test anomaly ratio was too high under the original z-score standardization.
+- Training residual sigma had very small values, with minimum sigma around `0.0013`.
+- Low-variance channels dominated the normalized residual score.
+- The strongest abnormal score contributors were node `10` and node `5`.
+
+The most important empirical evidence:
+
+- Without sigma floor, node `10` reached test p99 normalized error around `304.87`.
+- With `sigma_floor_value=0.05`, node `10` test p99 normalized error decreased to about `19.77`.
+- Precision, F1, and PR-AUC improved substantially.
+
+Best current postprocess configuration:
+
+```bash
+--score-source mtgnn
+--time-aggregate mean
+--threshold-percentile 99.8
+--sigma-floor-method value
+--sigma-floor-value 0.05
+```
+
+Best current raw point-level metrics:
+
+```text
+Precision = 0.7235
+Recall    = 0.6057
+F1-score  = 0.6594
+ROC-AUC   = 0.8412
+PR-AUC    = 0.5804
+```
+
+This setting is close to the diagnostic test-only best threshold:
+
+```text
+selected threshold   = 1.088573
+test-only best tau   = 1.087481
+selected F1-score    = 0.6594
+test-only best F1    = 0.6598
+```
+
+Current interpretation:
+
+1. The large false-positive problem was mainly caused by low residual sigma amplification.
+2. Fixed sigma floor `0.05` is currently more effective than sigma quantile floor `q10`.
+3. `joint_error` is not suitable as the current main score because it did not improve metrics over MTGNN-only residual scoring.
+4. Further threshold tuning is not the main priority because `p99.8` is already near the diagnostic optimum.
+5. The next scientific check should inspect node `5` and node `10` by sensor name, raw trajectory, and attack correspondence.
