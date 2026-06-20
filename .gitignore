@@ -39,5 +39,5 @@ runs/
 # OS/editor files
 desktop.ini
 .DS_Store
-.vscode/
-
+.vscode/*
+!.vscode/settings.json

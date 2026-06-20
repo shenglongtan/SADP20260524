@@ -77,6 +77,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stats-file", type=str, default=None,
                         help="外部统计量 npz 文件，需包含 mu/sigma 或 center/scale")
 
+    parser.add_argument("--sigma-floor-method", type=str, default="none",
+                        choices=["none", "quantile", "value"],
+                        help="Robust lower bound for residual sigma: none, quantile, or value")
+    parser.add_argument("--sigma-floor-quantile", type=float, default=10.0,
+                        help="Quantile used when sigma-floor-method=quantile")
+    parser.add_argument("--sigma-floor-value", type=float, default=0.05,
+                        help="Fixed lower bound used when sigma-floor-method=value")
+
     parser.add_argument("--time-aggregate", type=str, default="max", choices=["max", "mean", "first", "last"],
                         help="点级反投影时，同一原始时间点被多个窗口覆盖时的聚合方式")
     parser.add_argument("--horizon-reduce", type=str, default="max", choices=["max", "mean"],
@@ -327,6 +335,53 @@ def load_stats_file(path: str, node_num: int) -> Tuple[np.ndarray, np.ndarray]:
     return mu, sigma
 
 
+def sigma_summary(prefix: str, sigma: np.ndarray) -> Dict[str, float]:
+    flat = sigma.reshape(-1).astype(np.float32)
+    return {
+        f"{prefix}_min": float(np.min(flat)),
+        f"{prefix}_q10": float(np.percentile(flat, 10)),
+        f"{prefix}_median": float(np.median(flat)),
+        f"{prefix}_q90": float(np.percentile(flat, 90)),
+        f"{prefix}_max": float(np.max(flat)),
+    }
+
+
+def apply_sigma_floor(
+        sigma: np.ndarray,
+        method: str,
+        quantile: float,
+        value: float,
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    raw_sigma = np.where(sigma <= 0, EPS, sigma).astype(np.float32)
+
+    if method == "none":
+        floor = 0.0
+        used_sigma = raw_sigma
+    elif method == "quantile":
+        if not 0.0 <= quantile <= 100.0:
+            raise ValueError(f"sigma-floor-quantile must be in [0, 100], got {quantile}")
+        floor = float(np.percentile(raw_sigma.reshape(-1), quantile))
+        used_sigma = np.maximum(raw_sigma, floor).astype(np.float32)
+    elif method == "value":
+        if value < 0:
+            raise ValueError(f"sigma-floor-value must be non-negative, got {value}")
+        floor = float(value)
+        used_sigma = np.maximum(raw_sigma, floor).astype(np.float32)
+    else:
+        raise ValueError(f"Unknown sigma-floor-method: {method}")
+
+    info: Dict[str, float] = {
+        "method": method,
+        "quantile": float(quantile),
+        "value_arg": float(value),
+        "applied_value": float(floor),
+        "changed_nodes": int(np.sum(used_sigma > raw_sigma)),
+    }
+    info.update(sigma_summary("raw_sigma", raw_sigma))
+    info.update(sigma_summary("used_sigma", used_sigma))
+    return used_sigma, info
+
+
 def compute_scores_from_matrix(
         error_matrix: np.ndarray,
         mu: np.ndarray,
@@ -492,6 +547,7 @@ def save_outputs(
         norm_test: np.ndarray,
         mu: np.ndarray,
         sigma: np.ndarray,
+        sigma_raw: np.ndarray,
         pred_test_raw: np.ndarray,
         pred_test_pa: np.ndarray,
         labels: Dict[str, np.ndarray],
@@ -504,6 +560,7 @@ def save_outputs(
     np.save(out_dir / "norm_err_test.npy", norm_test)
     np.save(out_dir / "residual_mu.npy", mu.squeeze(0))
     np.save(out_dir / "residual_sigma.npy", sigma.squeeze(0))
+    np.save(out_dir / "residual_sigma_raw.npy", sigma_raw.squeeze(0))
     np.save(out_dir / "pred_test_raw.npy", pred_test_raw)
     np.save(out_dir / "pred_test_pa.npy", pred_test_pa)
 
@@ -552,6 +609,14 @@ def main() -> None:
     else:
         mu, sigma = load_stats_file(args.stats_file, node_num)
 
+    sigma_raw = sigma.copy()
+    sigma, sigma_floor_info = apply_sigma_floor(
+        sigma,
+        args.sigma_floor_method,
+        args.sigma_floor_quantile,
+        args.sigma_floor_value,
+    )
+
     scores_val, norm_val = compute_scores_from_matrix(matrices["val"], mu, sigma, args.var_reduce, args.var_topk)
     scores_test, norm_test = compute_scores_from_matrix(matrices["test"], mu, sigma, args.var_reduce, args.var_topk)
 
@@ -575,7 +640,8 @@ def main() -> None:
         "selected_residual_source": selected_source,
         "stats_source": args.stats_source,
         "stats_file": args.stats_file,
-        "standardization": "zscore: (e - train_mu_i) / (train_sigma_i + 1e-8)",
+        "standardization": "zscore: (e - train_mu_i) / (sigma_used_i + 1e-8)",
+        "sigma_floor_info": sigma_floor_info,
         "var_reduce": args.var_reduce,
         "var_topk": int(args.var_topk),
         "time_aggregate": args.time_aggregate if args.eval_granularity == "point" else None,
@@ -614,6 +680,7 @@ def main() -> None:
         norm_test,
         mu,
         sigma,
+        sigma_raw,
         pred_test_raw,
         pred_test_pa,
         labels,
