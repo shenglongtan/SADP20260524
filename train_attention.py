@@ -380,7 +380,7 @@ def main(args):
             ae_beta=args.ae_beta,              # Loss 权重：AE 纯重构损失的比例
             ae_lambda=args.ae_lambda,          # Loss 权重：AE 结合预测结果的混合重构比例
             cl=args.cl,                        # 布尔标识：是否启用课程学习 (Curriculum Learning) 策略
-            cl_update_num=args.cl_update_num,  # 课程学习参数：每隔多少 Epoch 增加一次预测任务难度
+            cl_update_num=args.cl_update_num,  # 课程学习参数：每隔多少个 batch 增加一次预测任务难度
             gd_clip=args.gd_clip,              # 梯度裁剪阈值，防止 RNN/GNN 训练中梯度爆炸
             opt_lr=args.opt_lr,                # 优化器（如 Adam）的初始学习率
             opt_wd=args.opt_wd,                # 优化器的权重衰减系数（L2 正则化项）

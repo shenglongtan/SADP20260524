@@ -1445,3 +1445,75 @@ Train==0 含攻击段 -> test
 ### 后续注意
 
 路线 A 主实验不使用验证集攻击标签选择阈值。测试集 `Attack` 标签只用于最终 Precision、Recall、F1、ROC-AUC、AUC-PR 评价。
+
+---
+
+## R013 - 性能根因代码审计归档
+
+### 日期
+
+2026-06-20
+
+### 涉及文件
+
+- `Algorithm_Audit/10_performance_root_cause_audit.md`
+
+### 审计原因
+
+Kaggle 正式训练已完成，程序可正常训练、保存、后处理和评价，但异常检测指标明显低于预期：
+
+- Precision 偏低
+- Recall 未达到论文级表现
+- F1-score 偏低
+- AUC-PR 不理想
+
+### 审计结论摘要
+
+本轮未修改模型代码，新增性能根因审计文档。当前低性能更可能来自以下组合因素，而不是单一运行错误：
+
+1. 训练正常段与验证正常段存在明显分布差异。
+2. 基于训练残差的 z-score 标准化可能被近零残差方差放大。
+3. `99%` 分位数阈值对当前分数分布过低，导致测试异常比例过高。
+4. Point Adjustment 在原始误报较高时进一步放大误报。
+5. 当前动态图为 dense batch-level attention，可能弱化局部故障特征。
+
+### 后续建议
+
+优先开展残差分布诊断、阈值敏感性实验、MTGNN-only 与 joint residual 对比、`time-aggregate` 和 `var-reduce` 消融，再决定是否修改模型结构。
+
+---
+
+## R014 - 关闭默认课程学习以完整训练多步预测 horizon
+
+### 修订日期
+
+2026-06-20
+
+### 涉及文件
+
+- `tools.py`
+- `GNN/trainer_attention.py`
+- `train_attention.py`
+
+### 修订原因
+
+Kaggle 正式训练中每个 epoch 约 46 个 batch，早停发生在第 27 轮，总训练 batch 约 1242，低于默认 `cl_update_num=2500`。
+
+在原默认配置 `--cl True` 下，`pred_step` 可能长期停留在 1，导致模型主要只训练第 1 个预测步；但最终验证、测试、残差导出和异常评分使用完整 `horizon_size=12`。这会造成训练目标与异常评分口径不一致，是导致多步残差偏高和误报升高的高风险原因。
+
+### 修订内容
+
+1. 将 `tools.py` 中 `--cl` 默认值从 `True` 改为 `False`。
+2. 在 `GNN/trainer_attention.py` 中，当课程学习关闭时，将 `pred_step` 初始化为 `horizon_size`。
+3. 将课程学习递增条件改为仅在 `self.cl=True` 时生效，并限制 `pred_step < horizon_size`。
+4. 修正 `train_attention.py` 中 `cl_update_num` 注释，明确其单位是 batch，不是 epoch。
+
+### 后续实验建议
+
+下一轮 Kaggle 训练建议直接使用默认参数，或显式添加：
+
+```bash
+--cl False
+```
+
+训练日志中应确认 `Namespace(..., cl=False, ...)`。该修订预计优先改善完整 12 步预测残差质量，并可能降低测试阶段误报率。

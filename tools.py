@@ -166,7 +166,7 @@ def get_input_paras():
     parser.add_argument('--dl_exp', type=int, default=1, help='时间卷积的扩张倍数')
 
     # 训练控制与优化策略参数
-    parser.add_argument('--cl', type=str_to_bool, default=True, help='是否开启课程学习(Curriculum Learning)')
+    parser.add_argument('--cl', type=str_to_bool, default=False, help='是否开启课程学习(Curriculum Learning)。默认关闭，确保多步预测直接训练完整 horizon')
     parser.add_argument('--shuffle_num', type=int, default=100, help='控制节点顺序随机打乱的步频')
     parser.add_argument('--split_num', type=int, default=1, help='将超大图切分为几个子图进行训练') #1表示不切分，直接全图训练
     parser.add_argument('--cl_update_num', type=int, default=2500, help='课程学习中更新预测步长的频率')

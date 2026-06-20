@@ -336,7 +336,7 @@ class Trainer:
         self.loss = masked_mae  
         self.gd_clip = gd_clip  # 梯度裁剪阈值注入
         self.train_num = 1  # 全局训练步数迭代计数器，用来作为课程学习步长的升级依据
-        self.pred_step = 1  # 课程学习当前解锁难度状态：初始化从最简单的只预测未来第 1 个时间步开始
+        self.pred_step = 1 if cl else horizon_size  # 关闭课程学习时，训练目标直接覆盖完整 horizon
         self.horizon_size = horizon_size  # 记录最终需要达到的最大多步预测总长度
         self.cl = cl  # 课程学习开关标志
         self.cl_update_num = cl_update_num  # 课程学习难度升级周期阈值
@@ -405,7 +405,7 @@ class Trainer:
         # 
         # ==================== 2. Loss 计算与课程学习控制逻辑 ====================
         # 当累积迭代步数达到了升级周期，且当前难度还没有超过多步预测的总上限时
-        if self.train_num % self.cl_update_num == 0 and self.pred_step <= self.horizon_size:
+        if self.cl and self.train_num % self.cl_update_num == 0 and self.pred_step < self.horizon_size:
             self.pred_step += 1  # 自动解锁下一阶段难度：命令模型开始多看一步未来的变化趋势
             # 
         if self.cl:  
