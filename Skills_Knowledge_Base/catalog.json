@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "last_updated": "2026-06-23",
-  "total_entries": 0,
+  "total_entries": 1,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -13,5 +13,18 @@
     "WF": "Workflow/工作流",
     "OT": "Other/其他"
   },
-  "entries": []
+  "entries": [
+    {
+      "id": "SKB-001",
+      "title": "Codex Visio Paper Figure Skill",
+      "title_zh": "学术论文图表 Visio 重建技能",
+      "source": "https://github.com/pengjunchi0/codex-visio-paper-figure-skill",
+      "date": "2026-06-23",
+      "category": "SK",
+      "tags": ["skills", "codex", "visio", "论文图表", "PowerShell", "COM自动化", "图表重建"],
+      "importance": 4,
+      "file": "entries/001_codex_visio_paper_figure_skill.md",
+      "summary": "Codex Skill，将参考图片重建为可编辑的 Visio .vsdx 原生格式，支持多格式导出"
+    }
+  ]
 }
