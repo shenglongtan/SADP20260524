@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-06-23",
+  "total_entries": 0,
+  "categories": {
+    "CC": "Claude Code",
+    "SK": "Skills/技能",
+    "MCP": "MCP Server",
+    "HK": "Hooks/钩子",
+    "PE": "Prompt Engineering",
+    "AG": "Agent/智能体",
+    "API": "Claude API",
+    "WF": "Workflow/工作流",
+    "OT": "Other/其他"
+  },
+  "entries": []
+}
