@@ -124,4 +124,4 @@ powershell -ExecutionPolicy Bypass -File scripts\visio_rebuild_scaffold.ps1 `
 
 ## 关联条目
 
-- （暂无）
+- [SKB-002 Academic Research Skills](002_academic_research_skills.md) - 同为学术论文工具链

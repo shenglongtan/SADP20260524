@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "last_updated": "2026-06-23",
-  "total_entries": 1,
+  "last_updated": "2026-06-24",
+  "total_entries": 2,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -24,7 +24,23 @@
       "tags": ["skills", "codex", "visio", "论文图表", "PowerShell", "COM自动化", "图表重建"],
       "importance": 4,
       "file": "entries/001_codex_visio_paper_figure_skill.md",
-      "summary": "Codex Skill，将参考图片重建为可编辑的 Visio .vsdx 原生格式，支持多格式导出"
+      "summary": "Codex Skill，将参考图片重建为可编辑的 Visio .vsdx 原生格式，支持多格式导出",
+      "installable": false,
+      "install_note": "Codex Skill，需 Windows + Visio，不兼容 Claude Code"
+    },
+    {
+      "id": "SKB-002",
+      "title": "Academic Research Skills",
+      "title_zh": "学术研究全流程技能套件",
+      "source": "https://github.com/Imbad0202/academic-research-skills",
+      "date": "2026-06-24",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "学术研究", "论文写作", "文献综述", "同行评审", "pipeline"],
+      "importance": 5,
+      "file": "entries/002_academic_research_skills.md",
+      "summary": "覆盖学术研究全流程的 Claude Code 技能套件，含深度研究、论文写作、同行评审、全流程编排四大技能",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，需在本地执行 /plugin marketplace add"
     }
   ]
 }
