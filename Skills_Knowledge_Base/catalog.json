@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "last_updated": "2026-06-24",
-  "total_entries": 2,
+  "last_updated": "2026-06-27",
+  "total_entries": 3,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -41,6 +41,20 @@
       "summary": "覆盖学术研究全流程的 Claude Code 技能套件，含深度研究、论文写作、同行评审、全流程编排四大技能",
       "installable": true,
       "install_note": "Claude Code 原生兼容，需在本地执行 /plugin marketplace add"
+    },
+    {
+      "id": "SKB-003",
+      "title": "SciPilot Figure Skill",
+      "title_zh": "科学论文数据可视化技能",
+      "source": "https://github.com/Haojae/scipilot-figure-skill",
+      "date": "2026-06-27",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "数据可视化", "科学图表", "matplotlib", "论文", "Python"],
+      "importance": 5,
+      "file": "entries/003_scipilot_figure_skill.md",
+      "summary": "科学数据可视化顾问技能，先数据画像再选图渲染，内置防错拦截和视觉自检，支持中文",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，需 Python 3.9+，本地 git clone 安装"
     }
   ]
 }

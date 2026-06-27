@@ -111,13 +111,14 @@ Skills_Knowledge_Base/
 
 | 指标     | 数值       |
 |----------|-----------|
-| 总条目数 | 2         |
+| 总条目数 | 3         |
 | 分类数   | 9         |
-| 最近更新 | 2026-06-24 |
+| 最近更新 | 2026-06-27 |
 
 ### 最新收录
 
 | ID | 标题 | 分类 | 重要程度 | 可安装 |
 |----|------|------|---------|--------|
+| SKB-003 | [SciPilot Figure Skill](entries/003_scipilot_figure_skill.md) | SK-Skills | ★★★★★ | ✅ Claude Code |
 | SKB-002 | [Academic Research Skills](entries/002_academic_research_skills.md) | SK-Skills | ★★★★★ | ✅ Claude Code |
 | SKB-001 | [Codex Visio Paper Figure Skill](entries/001_codex_visio_paper_figure_skill.md) | SK-Skills | ★★★★☆ | ❌ 需 Windows+Visio |
