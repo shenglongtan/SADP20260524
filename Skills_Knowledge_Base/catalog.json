@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "last_updated": "2026-06-27",
-  "total_entries": 3,
+  "total_entries": 4,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -55,6 +55,20 @@
       "summary": "科学数据可视化顾问技能，先数据画像再选图渲染，内置防错拦截和视觉自检，支持中文",
       "installable": true,
       "install_note": "Claude Code 原生兼容，需 Python 3.9+，本地 git clone 安装"
+    },
+    {
+      "id": "SKB-004",
+      "title": "Research Paper Writing Skills",
+      "title_zh": "ML/CV/NLP 论文写作技能包",
+      "source": "https://github.com/Master-cai/Research-Paper-Writing-Skills",
+      "date": "2026-06-27",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "codex", "gemini", "论文写作", "ML", "CV", "NLP"],
+      "importance": 4,
+      "file": "entries/004_research_paper_writing_skills.md",
+      "summary": "基于彭思达教授笔记的论文写作技能包，覆盖论文全章节写作指导，支持 Claude Code/Codex/Gemini 三平台",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，无额外依赖，纯 Markdown 复制即用"
     }
   ]
 }
