@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "last_updated": "2026-06-27",
-  "total_entries": 4,
+  "last_updated": "2026-06-28",
+  "total_entries": 5,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -69,6 +69,20 @@
       "summary": "基于彭思达教授笔记的论文写作技能包，覆盖论文全章节写作指导，支持 Claude Code/Codex/Gemini 三平台",
       "installable": true,
       "install_note": "Claude Code 原生兼容，无额外依赖，纯 Markdown 复制即用"
+    },
+    {
+      "id": "SKB-005",
+      "title": "PaperJury",
+      "title_zh": "论文投稿前 AI 评审压力测试",
+      "source": "https://github.com/u7079256/paperjury",
+      "date": "2026-06-28",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "论文评审", "预提交", "LaTeX", "对抗式评审", "闭环修订"],
+      "importance": 5,
+      "file": "entries/005_paperjury.md",
+      "summary": "投稿前 AI 评审压力测试，闭环工作流 review→verdict→revise→verify，三类反馈分级，支持 LaTeX/Markdown/Word",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，需 Node.js，可选 LaTeX 工具链"
     }
   ]
 }
