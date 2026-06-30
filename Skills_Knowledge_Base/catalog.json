@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "last_updated": "2026-06-28",
-  "total_entries": 5,
+  "last_updated": "2026-06-30",
+  "total_entries": 6,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -83,6 +83,20 @@
       "summary": "投稿前 AI 评审压力测试，闭环工作流 review→verdict→revise→verify，三类反馈分级，支持 LaTeX/Markdown/Word",
       "installable": true,
       "install_note": "Claude Code 原生兼容，需 Node.js，可选 LaTeX 工具链"
+    },
+    {
+      "id": "SKB-006",
+      "title": "sci-select",
+      "title_zh": "SCI 期刊选择 AI 技能",
+      "source": "https://github.com/keros68/sci-select",
+      "date": "2026-06-30",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "期刊选择", "SCI", "投稿", "Python", "学术"],
+      "importance": 4,
+      "file": "entries/006_sci_select.md",
+      "summary": "SCI/SCIE/ESCI/SSCI 期刊选择技能，聚合多源指标，输出四级投稿推荐带（冲刺/稳妥/保险/谨慎）",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，需 Python，可选 XinRui API Key"
     }
   ]
 }

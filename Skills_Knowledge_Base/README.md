@@ -111,14 +111,15 @@ Skills_Knowledge_Base/
 
 | 指标     | 数值       |
 |----------|-----------|
-| 总条目数 | 5         |
+| 总条目数 | 6         |
 | 分类数   | 9         |
-| 最近更新 | 2026-06-28 |
+| 最近更新 | 2026-06-30 |
 
 ### 最新收录
 
 | ID | 标题 | 分类 | 重要程度 | 可安装 |
 |----|------|------|---------|--------|
+| SKB-006 | [sci-select](entries/006_sci_select.md) | SK-Skills | ★★★★☆ | ✅ Claude Code |
 | SKB-005 | [PaperJury](entries/005_paperjury.md) | SK-Skills | ★★★★★ | ✅ Claude Code |
 | SKB-004 | [Research Paper Writing Skills](entries/004_research_paper_writing_skills.md) | SK-Skills | ★★★★☆ | ✅ Claude Code/Codex/Gemini |
 | SKB-003 | [SciPilot Figure Skill](entries/003_scipilot_figure_skill.md) | SK-Skills | ★★★★★ | ✅ Claude Code |
