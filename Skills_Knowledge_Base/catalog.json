@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "last_updated": "2026-06-30",
-  "total_entries": 6,
+  "last_updated": "2026-07-02",
+  "total_entries": 7,
   "categories": {
     "CC": "Claude Code",
     "SK": "Skills/技能",
@@ -97,6 +97,20 @@
       "summary": "SCI/SCIE/ESCI/SSCI 期刊选择技能，聚合多源指标，输出四级投稿推荐带（冲刺/稳妥/保险/谨慎）",
       "installable": true,
       "install_note": "Claude Code 原生兼容，需 Python，可选 XinRui API Key"
+    },
+    {
+      "id": "SKB-007",
+      "title": "Scientific-Writing-zh",
+      "title_zh": "中文科研写作教练技能",
+      "source": "https://github.com/YuanZHAO321/Scientific-Writing-zh",
+      "date": "2026-07-02",
+      "category": "SK",
+      "tags": ["skills", "claude-code", "科研写作", "中文", "论文写作", "ESL", "学术写作教练"],
+      "importance": 4,
+      "file": "entries/007_scientific_writing_zh.md",
+      "summary": "面向中文研究者的英文科研写作教练，中文讲解原则+英文例句，覆盖科研写作全生命周期",
+      "installable": true,
+      "install_note": "Claude Code 原生兼容，无额外依赖，纯 Markdown 复制即用"
     }
   ]
 }
